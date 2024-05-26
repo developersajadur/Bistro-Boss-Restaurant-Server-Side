@@ -18,21 +18,6 @@ app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser())
 
-// ------------ token verify check --------------------
-const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization;
-  // console.log(token);
-  if(!token){
-    return res.status(401).send({ message: "Unauthorized Access denied" });
-  }
-  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(401).send({ message: "Unauthorized Access denied" });
-    }
-    req.decoded = decoded;
-    next();
-  });
-}
 
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -77,6 +62,33 @@ app.post("/jwt", async (req, res) => {
   }
 });
 
+// ------------ token verify check --------------------
+const verifyToken = (req, res, next) => {
+  const token = req?.headers?.authorization;
+  if(!token){
+    return res.status(401).send({ message: "Unauthorized Access denied 1" });
+  }
+  jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized Access denied 2" });
+    }
+    req.decoded = decoded;
+    next();
+  });
+}
+// -------------- verify admin after verifyToken ------------
+
+const verifyAdmin = async (req, res, next) => {
+  const email = req?.decoded?.email;
+  const query = {email: email};
+  const user = await userCollections.findOne(query);
+  const isAdmin = user?.role === "Admin";
+  if(!isAdmin){
+    return res.status(403).send({ message: "Unauthorized Access denied" });
+  }
+  next();
+}
+
 
 
 // ------------------ users related data ----------------
@@ -96,25 +108,24 @@ app.post("/jwt", async (req, res) => {
       res.send(result);
     })
     // ----------------- get all users ----------------
-    app.get("/users",verifyToken, async (req, res) => {
+    app.get("/users",verifyToken, verifyAdmin, async (req, res) => {
       // console.log(req.headers);
         const result = await userCollections.find().toArray();
         res.send(result);
     })
     // --------------- get admin ------------------------
-    app.get("/users/admin/:email",verifyToken, async (req, res) => {
+    app.get("/users/admin/:email",verifyToken,verifyAdmin, async (req, res) => {
       const email = req.params.email;
-      console.log(req.decoded.email);
       if(email !== req.decoded.email){
         return res.status(401).send({ message: "Unauthorized Access denied" });
       }
       const query = {email: email};
       const user = await userCollections.findOne(query);
-      let admin = false;
-      if(user){
-        admin = user?.role === "admin";
+      let isAdmin = false;
+      if(user?.role){
+        isAdmin = user?.role === "Admin";
       }
-      res.send({admin});
+      res.send({isAdmin});
 
 
     })
@@ -140,17 +151,62 @@ app.get("/reviews", async (req, res) => {
     const result = await reviewCollections.find().toArray();
     res.send(result);
 
-
-
-
+})
 
     // ----------- menus related data --------------------
-})
+
+    // ------------- add a menu item -------------
+    app.post("/menus", verifyToken, verifyAdmin, async (req,res) => {
+      const menu = req.body;
+      const result = await menuCollections.insertOne(menu);
+      res.send(result);
+    })
     // ------------ get all menus ----------------
     app.get("/menus", async (req, res) => {
         const result = await menuCollections.find().toArray();
         res.send(result);
     })
+    // ------------- get a menu ----------------
+    app.get("/menus/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollections.findOne(query);
+      res.send(result);
+    })
+    // ---------------- update a menu item ----------------
+    app.patch("/menus/:id", verifyToken, verifyAdmin, async (req,res) => {
+      const item = req.body;
+      const id = req.params.id;
+      const filter = {_id: new ObjectId(id)};
+      const updatedDoc ={
+        $set:{
+          name: item.name,
+          category: item.category,
+          image: item.image,
+          price: item.price,
+          recipe: item.recipe,
+        }
+      }
+      const result = await menuCollections.updateOne(filter, updatedDoc);
+      res.send(result);
+    })
+    // ----------------- delete a menu item ----------------
+    app.delete("/menus/:id", verifyToken, verifyAdmin, async (req,res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await menuCollections.deleteOne(query);
+      res.send(result);
+    })
+    // ----------------- update a menu item ----------------
+    // app.patch("/menus/:id", verifyToken, verifyAdmin, async (req,res) => {
+    //   const id = req.params.id;
+    //   const filter = {_id: new ObjectId(id)};
+    //   const updatedDoc ={
+    //     $set: req.body
+    //   }
+    //   const result = await menuCollections.updateOne(filter, updatedDoc);
+    //   res.send(result);
+    // })
 
     // -------------- insert a card data -----------------
     app.post("/cards", async (req, res) => {
